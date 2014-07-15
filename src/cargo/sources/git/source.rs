@@ -51,7 +51,7 @@ impl<'a, 'b> GitSource<'a, 'b> {
         }
     }
 
-    pub fn get_namespace<'a>(&'a self) -> &'a Location {
+    pub fn get_location<'a>(&'a self) -> &'a Location {
         self.remote.get_location()
     }
 }

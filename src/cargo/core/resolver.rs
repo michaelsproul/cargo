@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use serialize::{Encodable, Encoder};
 use util::graph::{Nodes,Edges};
 
 use core::{
@@ -14,6 +15,39 @@ use util::{CargoResult, Graph, human, internal};
 
 pub struct Resolve {
     graph: Graph<PackageId>
+}
+
+#[deriving(Encodable)]
+pub struct EncodableResolve {
+    dependencies: Vec<EncodableDependency>
+}
+
+#[deriving(Encodable)]
+pub struct EncodableDependency{
+    name: String,
+    version: String,
+    source: SourceId,
+    dependencies: Option<Vec<PackageId>>
+}
+
+impl<E, S: Encoder<E>> Encodable<S, E> for Resolve {
+    fn encode(&self, s: &mut S) -> Result<(), E> {
+        let mut ids: Vec<&PackageId> = self.graph.iter().collect();
+        ids.sort();
+
+        let encodable = ids.iter().map(|&id| {
+            EncodableDependency {
+                name: id.get_name().to_string(),
+                version: id.get_version().to_string(),
+                source: id.get_source_id().clone(),
+                dependencies: self.graph.edges(id).map(|edge| {
+                    edge.map(|e| e.clone()).collect()
+                })
+            }
+        }).collect::<Vec<EncodableDependency>>();
+
+        EncodableResolve { dependencies: encodable }.encode(s)
+    }
 }
 
 impl Resolve {
@@ -122,6 +156,7 @@ mod test {
     use core::source::{SourceId, RegistryKind, GitKind, Location, Remote};
     use core::{Dependency, PackageId, Summary, Registry};
     use util::CargoResult;
+    use core::registry::test::RegistryBuilder;
 
     fn resolve<R: Registry>(pkg: &PackageId, deps: &[Dependency], registry: &mut R)
                             -> CargoResult<Vec<PackageId>> {

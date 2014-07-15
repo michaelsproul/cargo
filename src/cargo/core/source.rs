@@ -1,5 +1,6 @@
 use std::fmt;
 use std::fmt::{Show, Formatter};
+use std::cmp::Ordering;
 use serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use url::Url;
@@ -77,10 +78,10 @@ impl<E, S: Encoder<E>> Encodable<S, E> for Location {
     }
 }
 
-#[deriving(Encodable, Decodable, Clone, Eq, Hash)]
+#[deriving(Decodable, Clone, Eq, Hash)]
 pub struct SourceId {
-    pub kind: SourceKind,
     pub location: Location,
+    pub kind: SourceKind,
 }
 
 impl Show for Location {
@@ -89,6 +90,18 @@ impl Show for Location {
             Local(ref p) => write!(f, "file:{}", p.display()),
             Remote(ref u) => write!(f, "{}", u),
         }
+    }
+}
+
+impl PartialOrd for SourceId {
+    fn partial_cmp(&self, other: &SourceId) -> Option<Ordering> {
+        self.to_string().partial_cmp(&other.to_string())
+    }
+}
+
+impl Ord for SourceId {
+    fn cmp(&self, other: &SourceId) -> Ordering {
+        self.to_string().cmp(&other.to_string())
     }
 }
 
@@ -101,6 +114,16 @@ impl Location {
                 human(format!("invalid url `{}`: `{}", s, e))
             })
         }
+    }
+}
+
+impl<E, S: Encoder<E>> Encodable<S, E> for SourceId {
+    fn encode(&self, s: &mut S) -> Result<(), E> {
+        if !self.is_path() {
+            raw_try!(self.to_url().encode(s));
+        }
+
+        Ok(())
     }
 }
 
@@ -148,6 +171,27 @@ impl PartialEq for SourceId {
 impl SourceId {
     pub fn new(kind: SourceKind, location: Location) -> SourceId {
         SourceId { kind: kind, location: location }
+    }
+
+    pub fn to_url(&self) -> String {
+        match *self {
+            SourceId { kind: PathKind, ref location } => {
+                fail!("Path sources are not included in the lockfile, so this is unimplemented");
+            },
+            SourceId { kind: GitKind(ref reference), ref location } => {
+                let ref_str = if reference.as_slice() != "master" {
+                    format!("#ref={}", reference)
+                } else {
+                    "".to_string()
+                };
+
+                format!("git+{}{}", location, ref_str)
+            },
+            SourceId { kind: RegistryKind, .. } => {
+                // TODO: Central registry vs. alternates
+                "registry+https://crates.io/".to_string()
+            }
+        }
     }
 
     // Pass absolute path
