@@ -1,5 +1,8 @@
-use serialize::Encodable;
-use toml::Encoder;
+use std::collections::HashMap;
+use std::io::fs::File;
+use serialize::{Encodable, Decodable};
+use toml;
+use toml::{Encoder, Decoder};
 use core::registry::PackageRegistry;
 use core::{MultiShell, Source, Resolve, resolver};
 use sources::{PathSource};
@@ -39,6 +42,46 @@ pub fn generate_lockfile(manifest_path: &Path, shell: &mut MultiShell, update: b
 
 fn write_resolve(resolve: Resolve) {
     let mut e = Encoder::new();
-    let toml = resolve.encode(&mut e).unwrap();
-    println!("{}", toml);
+    resolve.encode(&mut e).unwrap();
+
+    let deps = e.toml.find_equiv(&"package").unwrap().as_slice().unwrap();
+    let mut out = String::new();
+
+    for dep in deps.iter() {
+        let dep = dep.as_table().unwrap();
+        out.push_str("[[package]]\n");
+        out.push_str(format!("name = {}\n", lookup(dep, "name")).as_slice());
+        out.push_str(format!("version = {}\n", lookup(dep, "version")).as_slice());
+
+        dep.find_equiv(&"source").map(|s| {
+          out.push_str(format!("source = {}\n", lookup(dep, "source")).as_slice());
+        });
+
+        dep.find_equiv(&"dependencies").map(|s| {
+            let slice = s.as_slice().unwrap();
+
+            if !slice.is_empty() {
+                out.push_str("dependencies = [\n");
+
+                for child in s.as_slice().unwrap().iter() {
+                    out.push_str(format!("  {},\n", child).as_slice());
+                }
+
+                out.push_str("]\n");
+            }
+            out.push_str("\n");
+        });
+    }
+
+    let mut file = File::create(&Path::new("Cargo.lock"));
+    write!(file, "{}", out);
+
+    let mut d = Decoder::new(toml::Table(e.toml.clone()));
+    let v: resolver::EncodableResolve = Decodable::decode(&mut d).unwrap();
+
+    println!("{}", v);
+}
+
+fn lookup<'a>(table: &'a HashMap<String, toml::Value>, key: &'static str) -> &'a toml::Value {
+    table.find_equiv(&key).unwrap()
 }

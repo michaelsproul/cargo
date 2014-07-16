@@ -3,6 +3,7 @@ use std::fmt::{Show, Formatter};
 use std::cmp::Ordering;
 use serialize::{Decodable, Decoder, Encodable, Encoder};
 
+use url;
 use url::Url;
 
 use core::{Summary, Package, PackageId};
@@ -78,7 +79,7 @@ impl<E, S: Encoder<E>> Encodable<S, E> for Location {
     }
 }
 
-#[deriving(Decodable, Clone, Eq, Hash)]
+#[deriving(Clone, Eq, Hash)]
 pub struct SourceId {
     pub location: Location,
     pub kind: SourceKind,
@@ -119,11 +120,18 @@ impl Location {
 
 impl<E, S: Encoder<E>> Encodable<S, E> for SourceId {
     fn encode(&self, s: &mut S) -> Result<(), E> {
-        if !self.is_path() {
-            raw_try!(self.to_url().encode(s));
+        if self.is_path() {
+            s.emit_option_none()
+        } else {
+           self.to_url().encode(s)
         }
+    }
+}
 
-        Ok(())
+impl<E, D: Decoder<E>> Decodable<D, E> for SourceId {
+    fn decode(d: &mut D) -> Result<SourceId, E> {
+        let string: String = Decodable::decode(d).ok().expect("Invalid encoded SourceId");
+        Ok(SourceId::from_url(string))
     }
 }
 
@@ -171,6 +179,26 @@ impl PartialEq for SourceId {
 impl SourceId {
     pub fn new(kind: SourceKind, location: Location) -> SourceId {
         SourceId { kind: kind, location: location }
+    }
+
+    pub fn from_url(string: String) -> SourceId {
+        let mut parts = string.as_slice().splitn('+', 1);
+        let kind = parts.nth(0).unwrap();
+        let mut url = Url::parse(parts.nth(0).unwrap()).ok().expect("Invalid URL");
+
+        match kind {
+            "git" => {
+                let reference = {
+                    url.path.fragment.as_ref().and_then(|frag| {
+                        frag.as_slice().split('=').nth(1)
+                    }).unwrap_or("master").to_string()
+                };
+
+                url.path.fragment = None;
+                SourceId::for_git(&url, reference.as_slice())
+            },
+            _ => fail!("Unsupported serialized SourceId")
+        }
     }
 
     pub fn to_url(&self) -> String {

@@ -70,6 +70,24 @@ impl<E, S: Encoder<E>> Encodable<S, E> for PackageId {
     }
 }
 
+impl<E, D: Decoder<E>> Decodable<D, E> for PackageId {
+    fn decode(d: &mut D) -> Result<PackageId, E> {
+        let string: String = raw_try!(Decodable::decode(d));
+        let regex = regex!(r"^([^ ]+) ([^ ]+) \(([^\)]+)\)$");
+        let captures = regex.captures(string.as_slice()).unwrap();
+
+        let name = captures.at(1);
+        let version = semver::parse(captures.at(2)).unwrap();
+        let source_id = SourceId::from_url(captures.at(3).to_string());
+
+        Ok(PackageId {
+            name: name.to_string(),
+            version: version,
+            source_id: source_id
+        })
+    }
+}
+
 impl<S: hash::Writer> Hash<S> for PackageId {
     fn hash(&self, state: &mut S) {
         self.name.hash(state);
