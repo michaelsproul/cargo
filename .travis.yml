@@ -1,9 +1,11 @@
-language: rust
+language: c
 
 install:
   - sh ./.travis.install.deps.sh
+  - curl www.rust-lang.org/rustup.sh | sudo CFG_DISABLE_CARGO=1 bash
 
 script:
+  - ./configure
   - make
   - make test -j4
   - make install DESTDIR=${PWD}/destdir
